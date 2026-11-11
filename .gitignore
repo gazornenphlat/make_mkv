@@ -1,0 +1,8 @@
+# Rust build output
+app/target/
+app/target*/
+# Scratch and screenshots from the builder
+build-activity.log
+app/shots/
+checks/
+*.bak
