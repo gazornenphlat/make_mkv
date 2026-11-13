@@ -56,3 +56,7 @@ The default is `title%02u.mkv`. A template such as `%s_%02u.mkv` gives `MOVIE_DI
 ## Also in this repository
 
 - [`media-renamer/`](media-renamer/README.md): Media Renamer, a separate app that renames TV episode and movie files. It has its own README.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
