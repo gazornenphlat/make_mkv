@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "values": [
+    {"name": "default episode format", "group": "naming", "value": "{n} - {s00e00} - {t}{subt}", "source": "FormatDialog.properties episode.example[0]"},
+    {"name": "default movie format", "group": "naming", "value": "{n.colon(' - ')} ({y}){subt}", "source": "FormatDialog.properties movie.example[0]"},
+    {"name": "illegal name characters", "group": "naming", "value": "\\ / : * ? \" < > |", "source": "FileUtilities.<clinit> ILLEGAL_CHARACTERS"},
+    {"name": "max name length before extension", "group": "naming", "value": 247, "unit": "characters", "source": "FileUtilities.<clinit> ILLEGAL_CHARACTERS"},
+    {"name": "video extensions", "group": "media", "value": "mkv mk3d mp4 m4v 3gp iso mov avi mpg mpeg vob ts tp m2ts m4s ogg ogm divx asf wmv wtv dvr-ms rec webm flv rm rmvb rmp4 tivo nuv 3dsbs 3dtab strm strmlnk streamlnk", "source": "MediaTypes.<clinit> VIDEO_FILES"},
+    {"name": "subtitle extensions", "group": "media", "value": "srt sub ssa ass smi sami mpl sup vtt ttml vobsub idx", "source": "MediaTypes.<clinit> SUBTITLE_FILES"},
+    {"name": "image extensions", "group": "media", "value": "png jpg jpeg jxl avif webp heic heif dng tbn", "source": "MediaTypes.<clinit> IMAGE_FILES"},
+    {"name": "audio extensions", "group": "media", "value": "mp3 m4a m4b mka flac opus wma ogg ogm oga wav aiff alac ac3 dts", "source": "MediaTypes.<clinit> AUDIO_FILES"},
+    {"name": "season limit (default)", "group": "matching", "value": 30, "source": "SeasonEpisodeMatcher.<clinit> DEFAULT_SANITY"},
+    {"name": "season episode limit (default)", "group": "matching", "value": 50, "source": "SeasonEpisodeMatcher.<clinit> DEFAULT_SANITY"},
+    {"name": "absolute episode limit (default)", "group": "matching", "value": 1000, "source": "SeasonEpisodeMatcher.<clinit> DEFAULT_SANITY"},
+    {"name": "year range start", "group": "matching", "value": 1930, "source": "similarity/DateMatcher.<clinit> DEFAULT_SANITY"},
+    {"name": "year range end", "group": "matching", "value": 2040, "source": "similarity/DateMatcher.<clinit> DEFAULT_SANITY"},
+    {"name": "colon separator pattern", "group": "naming", "value": "\\s*[:꞉]+\\s*", "source": "util/RegularExpressions.<clinit> COLON; format/ExpressionFormatMethods.colon"},
+    {"name": "space normalise pattern", "group": "naming", "value": "[:?._]", "source": "similarity/Normalization.normalizeSpace"},
+    {"name": "auto number range end", "group": "rename", "value": 99, "source": "cli/StandardConflictAction$4.conflict IntStream.range(1, 100)"},
+    {"name": "season limit (strict)", "group": "matching", "value": 10, "source": "SeasonEpisodeMatcher.<clinit> STRICT_SANITY"},
+    {"name": "season episode limit (strict)", "group": "matching", "value": 30, "source": "SeasonEpisodeMatcher.<clinit> STRICT_SANITY"},
+    {"name": "strict uses narrow patterns only", "group": "matching", "value": true, "source": "EpisodeListMatcher.match bytecode 0x166-0x177"},
+    {"name": "match modes", "group": "matching", "value": "Opportunistic, Strict", "source": "ui/rename/MatchMode.getDescription"},
+    {"name": "rename actions", "group": "rename", "value": "Move, Copy, Keep link, Symlink, Hard link, Clone, Duplicate, Test", "source": "StandardRenameAction.<clinit>"},
+    {"name": "conflict choices", "group": "rename", "value": "Skip, Replace, Auto, Index, Fail", "source": "cli/StandardConflictAction.<clinit>"},
+    {"name": "default conflict choice", "group": "rename", "value": "Skip", "source": "cli/ArgumentBean.getConflictAction (command-line default)"},
+    {"name": "subtitle suffix when none attached", "group": "naming", "value": "", "estimated": true},
+    {"name": "movie year window", "group": "matching", "value": "1930 to 2040", "source": "similarity/DateMatcher.<clinit> DEFAULT_SANITY"},
+    {"name": "movie year pattern", "group": "matching", "value": "\\b(?:19|20)[0-9]{2}\\b", "source": "media/MediaDetection.<clinit> YEAR"}
+  ]
+}

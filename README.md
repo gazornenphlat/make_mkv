@@ -52,3 +52,7 @@ The default is `title%02u.mkv`. A template such as `%s_%02u.mkv` gives `MOVIE_DI
 - Joined parts use ffmpeg's `concat:` input. Paths containing `|` will not work.
 - Blu-ray and DVD titles are the playlists and title sets on the disc. The disc does not say which one is the film, so check the lengths and sizes.
 - A failed rip removes its partial file. A file that already existed is never removed.
+
+## Also in this repository
+
+- [`media-renamer/`](media-renamer/README.md): Media Renamer, a separate app that renames TV episode and movie files. It has its own README.

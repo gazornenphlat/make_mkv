@@ -1,8 +1,11 @@
 # Rust build output
 app/target/
 app/target*/
+media-renamer/target/
+media-renamer/target*/
 # Scratch and screenshots from the builder
 build-activity.log
 app/shots/
+media-renamer/shots/
 checks/
 *.bak
