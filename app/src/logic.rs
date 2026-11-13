@@ -31,17 +31,29 @@ pub struct Title {
 
 /// Fills in the title number and the disc name, e.g. `%s_%02u.mkv` gives `Movie_03.mkv`.
 pub fn fill_name(template: &str, number: usize, disc: &str) -> String {
-    template.replace("%02u", &format!("{number:02}")).replace("%s", &sanitize(disc))
+    template
+        .replace("%02u", &format!("{number:02}"))
+        .replace("%s", &sanitize(disc))
 }
 
 /// Replaces characters that Windows does not allow in file names.
 fn sanitize(text: &str) -> String {
     let clean: String = text
         .chars()
-        .map(|c| if "<>:\"/\\|?*".contains(c) || c.is_control() { '_' } else { c })
+        .map(|c| {
+            if "<>:\"/\\|?*".contains(c) || c.is_control() {
+                '_'
+            } else {
+                c
+            }
+        })
         .collect();
     let trimmed = clean.trim().trim_end_matches('.');
-    if trimmed.is_empty() { "disc".to_string() } else { trimmed.to_string() }
+    if trimmed.is_empty() {
+        "disc".to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 /// The name a folder or disc is known by: its last folder name, or "disc" for a drive root.
@@ -73,7 +85,13 @@ fn strip_mkv(name: &str) -> &str {
 }
 
 /// Output file for one title. Uses the clash name when the first choice already exists.
-pub fn output_path(folder: &Path, template: &str, number: usize, disc: &str, exists: impl Fn(&Path) -> bool) -> PathBuf {
+pub fn output_path(
+    folder: &Path,
+    template: &str,
+    number: usize,
+    disc: &str,
+    exists: impl Fn(&Path) -> bool,
+) -> PathBuf {
     let base = strip_mkv(&fill_name(template, number, disc)).to_string();
     let first = folder.join(format!("{base}.mkv"));
     if !exists(&first) {
@@ -143,7 +161,11 @@ pub fn parse_mpls(bytes: &[u8]) -> Option<Vec<PlayItem>> {
         let body = bytes.get(pos + 2..pos + 2 + len)?;
         // Layout of one item body: clip name (5), codec (4), flags (2), STC id (1), in (4), out (4).
         let clip = std::str::from_utf8(body.get(0..5)?).ok()?.to_string();
-        items.push(PlayItem { clip, in_time: be_u32(body, 12)?, out_time: be_u32(body, 16)? });
+        items.push(PlayItem {
+            clip,
+            in_time: be_u32(body, 12)?,
+            out_time: be_u32(body, 16)?,
+        });
         pos += 2 + len;
     }
     Some(items)
@@ -172,7 +194,10 @@ pub fn parse_vob_name(name: &str) -> Option<(u32, u32)> {
 
 /// ffprobe prints the length in seconds as plain text.
 pub fn parse_duration(text: &str) -> Option<f64> {
-    text.trim().parse::<f64>().ok().filter(|d| d.is_finite() && *d > 0.0)
+    text.trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|d| d.is_finite() && *d > 0.0)
 }
 
 /// Share of one file finished, from an ffmpeg `-progress` line such as `out_time_us=5000000`.
@@ -208,19 +233,31 @@ mod tests {
     #[test]
     fn template_takes_number_and_disc_name() {
         assert_eq!(fill_name(DEFAULT_NAME_TEMPLATE, 3, "x"), "title03.mkv");
-        assert_eq!(fill_name("%s_%02u.mkv", 4, "Movie: Disc"), "Movie_ Disc_04.mkv");
+        assert_eq!(
+            fill_name("%s_%02u.mkv", 4, "Movie: Disc"),
+            "Movie_ Disc_04.mkv"
+        );
     }
 
     #[test]
     fn output_uses_clash_name_when_taken() {
         let dir = Path::new("out");
-        assert_eq!(output_path(dir, DEFAULT_NAME_TEMPLATE, 3, "d", |_| false), dir.join("title03.mkv"));
-        assert_eq!(output_path(dir, DEFAULT_NAME_TEMPLATE, 3, "d", |_| true), dir.join("title03_t03.mkv"));
+        assert_eq!(
+            output_path(dir, DEFAULT_NAME_TEMPLATE, 3, "d", |_| false),
+            dir.join("title03.mkv")
+        );
+        assert_eq!(
+            output_path(dir, DEFAULT_NAME_TEMPLATE, 3, "d", |_| true),
+            dir.join("title03_t03.mkv")
+        );
     }
 
     #[test]
     fn mkv_suffix_is_removed_in_any_case() {
-        assert_eq!(output_path(Path::new("o"), "Movie.MKV", 1, "d", |_| false), Path::new("o").join("Movie.mkv"));
+        assert_eq!(
+            output_path(Path::new("o"), "Movie.MKV", 1, "d", |_| false),
+            Path::new("o").join("Movie.mkv")
+        );
     }
 
     #[test]
@@ -246,13 +283,20 @@ mod tests {
     fn duration_and_progress_parse() {
         assert_eq!(parse_duration(" 91.5\n"), Some(91.5));
         assert_eq!(parse_duration("N/A"), None);
-        assert_eq!(progress_fraction("out_time_us=5000000", Some(10.0)), Some(0.5));
+        assert_eq!(
+            progress_fraction("out_time_us=5000000", Some(10.0)),
+            Some(0.5)
+        );
         assert_eq!(progress_fraction("frame=12", Some(10.0)), None);
     }
 
     #[test]
     fn playlist_items_are_read() {
-        let items = parse_mpls(&mpls_bytes(&[("00001", 0, 45_000 * 90), ("00002", 45_000, 45_000 * 3)])).unwrap();
+        let items = parse_mpls(&mpls_bytes(&[
+            ("00001", 0, 45_000 * 90),
+            ("00002", 45_000, 45_000 * 3),
+        ]))
+        .unwrap();
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].clip, "00001");
         assert_eq!(ticks_to_secs(items[0].out_time - items[0].in_time), 90.0);
@@ -269,7 +313,10 @@ mod tests {
 
     #[test]
     fn input_is_file_or_concat_list() {
-        assert_eq!(input_arg(&[PathBuf::from("a.vob")]), OsString::from("a.vob"));
+        assert_eq!(
+            input_arg(&[PathBuf::from("a.vob")]),
+            OsString::from("a.vob")
+        );
         assert_eq!(
             input_arg(&[PathBuf::from("a.vob"), PathBuf::from("b.vob")]),
             OsString::from("concat:a.vob|b.vob")

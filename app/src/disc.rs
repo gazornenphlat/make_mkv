@@ -16,10 +16,10 @@ pub struct FoundTitle {
 
 /// Titles for a DVD or Blu-ray layout. None when the folder has neither, or has no usable titles.
 pub fn find_disc_titles(folder: &Path) -> Option<Vec<FoundTitle>> {
-    if let Some(bdmv) = blu_ray_root(folder) {
-        if let Some(titles) = blu_ray_titles(&bdmv, disc_name(folder).as_deref()) {
-            return Some(titles);
-        }
+    if let Some(bdmv) = blu_ray_root(folder)
+        && let Some(titles) = blu_ray_titles(&bdmv, disc_name(folder).as_deref())
+    {
+        return Some(titles);
     }
     let video_ts = dvd_root(folder)?;
     let titles = dvd_titles(&video_ts, disc_name(folder).as_deref());
@@ -29,17 +29,19 @@ pub fn find_disc_titles(folder: &Path) -> Option<Vec<FoundTitle>> {
 /// The disc's own name: the Blu-ray title from META/DL/bdmt_eng.xml, else the volume label.
 /// Disc titles on the disc itself are only a title, not the film's name, so the playlist or title set still follows.
 fn disc_name(folder: &Path) -> Option<String> {
-    let root = if folder.file_name().is_some_and(|n| n.eq_ignore_ascii_case("BDMV")) {
+    let root = if folder
+        .file_name()
+        .is_some_and(|n| n.eq_ignore_ascii_case("BDMV"))
+    {
         folder.parent()
     } else {
         Some(folder)
     };
-    if let Some(root) = root {
-        if let Ok(xml) = std::fs::read_to_string(root.join("META").join("DL").join("bdmt_eng.xml")) {
-            if let Some(name) = xml_tag(&xml, "di:name") {
-                return Some(name);
-            }
-        }
+    if let Some(root) = root
+        && let Ok(xml) = std::fs::read_to_string(root.join("META").join("DL").join("bdmt_eng.xml"))
+        && let Some(name) = xml_tag(&xml, "di:name")
+    {
+        return Some(name);
     }
     drives::volume_label(folder)
 }
@@ -64,7 +66,11 @@ fn with_disc(disc: Option<&str>, part: String) -> String {
 
 /// The BDMV folder, whether the user picked the disc root or the BDMV folder itself.
 fn blu_ray_root(folder: &Path) -> Option<PathBuf> {
-    let bdmv = if folder.join("BDMV").is_dir() { folder.join("BDMV") } else { folder.to_path_buf() };
+    let bdmv = if folder.join("BDMV").is_dir() {
+        folder.join("BDMV")
+    } else {
+        folder.to_path_buf()
+    };
     bdmv.join("PLAYLIST").is_dir().then_some(bdmv)
 }
 
@@ -74,15 +80,22 @@ fn blu_ray_titles(bdmv: &Path, disc: Option<&str>) -> Option<Vec<FoundTitle>> {
     let mut lists: Vec<PathBuf> = entries
         .flatten()
         .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("mpls")))
+        .filter(|p| {
+            p.extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("mpls"))
+        })
         .collect();
     lists.sort();
 
     let mut seen: Vec<Vec<PathBuf>> = Vec::new();
     let mut titles = Vec::new();
     for list in lists {
-        let Ok(bytes) = std::fs::read(&list) else { continue };
-        let Some(items) = logic::parse_mpls(&bytes) else { continue };
+        let Ok(bytes) = std::fs::read(&list) else {
+            continue;
+        };
+        let Some(items) = logic::parse_mpls(&bytes) else {
+            continue;
+        };
         if items.is_empty() {
             continue;
         }
@@ -97,8 +110,15 @@ fn blu_ray_titles(bdmv: &Path, disc: Option<&str>) -> Option<Vec<FoundTitle>> {
             .iter()
             .map(|i| logic::ticks_to_secs(i.out_time.saturating_sub(i.in_time)))
             .sum();
-        let size_bytes = sources.iter().filter_map(|p| std::fs::metadata(p).ok()).map(|m| m.len()).sum();
-        let stem = list.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let size_bytes = sources
+            .iter()
+            .filter_map(|p| std::fs::metadata(p).ok())
+            .map(|m| m.len())
+            .sum();
+        let stem = list
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
         seen.push(sources.clone());
         titles.push(FoundTitle {
             name: with_disc(disc, format!("Playlist {stem}")),
@@ -114,7 +134,10 @@ fn blu_ray_titles(bdmv: &Path, disc: Option<&str>) -> Option<Vec<FoundTitle>> {
 fn dvd_root(folder: &Path) -> Option<PathBuf> {
     if folder.join("VIDEO_TS").is_dir() {
         Some(folder.join("VIDEO_TS"))
-    } else if folder.file_name().is_some_and(|n| n.eq_ignore_ascii_case("VIDEO_TS")) {
+    } else if folder
+        .file_name()
+        .is_some_and(|n| n.eq_ignore_ascii_case("VIDEO_TS"))
+    {
         Some(folder.to_path_buf())
     } else {
         None
@@ -123,7 +146,9 @@ fn dvd_root(folder: &Path) -> Option<PathBuf> {
 
 /// One title per title set: its VTS_NN_1.VOB, VTS_NN_2.VOB ... parts joined in order.
 fn dvd_titles(video_ts: &Path, disc: Option<&str>) -> Vec<FoundTitle> {
-    let Ok(entries) = std::fs::read_dir(video_ts) else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(video_ts) else {
+        return Vec::new();
+    };
     let mut sets: BTreeMap<u32, Vec<(u32, PathBuf)>> = BTreeMap::new();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -138,8 +163,17 @@ fn dvd_titles(video_ts: &Path, disc: Option<&str>) -> Vec<FoundTitle> {
         .map(|(set, mut parts)| {
             parts.sort();
             let sources: Vec<PathBuf> = parts.into_iter().map(|(_, p)| p).collect();
-            let size_bytes = sources.iter().filter_map(|p| std::fs::metadata(p).ok()).map(|m| m.len()).sum();
-            FoundTitle { name: with_disc(disc, format!("Title set {set:02}")), sources, duration_secs: None, size_bytes }
+            let size_bytes = sources
+                .iter()
+                .filter_map(|p| std::fs::metadata(p).ok())
+                .map(|m| m.len())
+                .sum();
+            FoundTitle {
+                name: with_disc(disc, format!("Title set {set:02}")),
+                sources,
+                duration_secs: None,
+                size_bytes,
+            }
         })
         .collect()
 }
@@ -173,7 +207,11 @@ mod tests {
         let root = temp("bd");
         std::fs::create_dir_all(root.join("BDMV/PLAYLIST")).unwrap();
         std::fs::create_dir_all(root.join("BDMV/STREAM")).unwrap();
-        std::fs::write(root.join("BDMV/PLAYLIST/00800.mpls"), mpls("00001", 45_000 * 90)).unwrap();
+        std::fs::write(
+            root.join("BDMV/PLAYLIST/00800.mpls"),
+            mpls("00001", 45_000 * 90),
+        )
+        .unwrap();
         std::fs::write(root.join("BDMV/STREAM/00001.m2ts"), b"x").unwrap();
         let titles = find_disc_titles(&root).unwrap();
         assert_eq!(titles.len(), 1);
@@ -189,7 +227,12 @@ mod tests {
         let root = temp("dvd");
         let video_ts = root.join("VIDEO_TS");
         std::fs::create_dir_all(&video_ts).unwrap();
-        for name in ["VIDEO_TS.VOB", "VTS_01_0.VOB", "VTS_01_2.VOB", "VTS_01_1.VOB"] {
+        for name in [
+            "VIDEO_TS.VOB",
+            "VTS_01_0.VOB",
+            "VTS_01_2.VOB",
+            "VTS_01_1.VOB",
+        ] {
             std::fs::write(video_ts.join(name), b"x").unwrap();
         }
         let titles = find_disc_titles(&root).unwrap();
