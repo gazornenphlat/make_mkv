@@ -1,12 +1,11 @@
 //! Rules for finding, picking and naming titles. No window code here, so they can be tested.
 
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 /// Default minimum title length in seconds.
 pub const DEFAULT_MIN_LENGTH_SECS: u32 = 120;
-/// `%02u` becomes the title number and `%s` the disc or folder name.
-pub const DEFAULT_NAME_TEMPLATE: &str = "title%02u.mkv";
+/// `%02u` becomes the title number and `%s` the disc name.
+pub const DEFAULT_NAME_TEMPLATE: &str = "%s_%02u.mkv";
 /// Suffix used when the output name is already taken.
 pub const CLASH_SUFFIX_TEMPLATE: &str = "_t%02u.mkv";
 
@@ -15,18 +14,47 @@ const MEDIA_EXTENSIONS: [&str; 5] = ["mkv", "m2ts", "ts", "vob", "mp4"];
 /// Blu-ray playlist times count in 45 kHz ticks.
 const BD_TICKS_PER_SEC: f64 = 45_000.0;
 
+/// A piece of a file: `len` bytes starting at `offset`. A whole file has offset 0 and its full length.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Segment {
+    pub path: PathBuf,
+    pub offset: u64,
+    pub len: u64,
+}
+
+impl Segment {
+    pub fn whole(path: PathBuf) -> Self {
+        let len = file_len(&path);
+        Self {
+            path,
+            offset: 0,
+            len,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Title {
     /// 1-based position in the list, used in output names.
     pub number: usize,
     /// Name shown in the list.
     pub label: String,
-    /// Files played in order. A disc title can be several files (DVD VOB parts, Blu-ray clips).
-    pub sources: Vec<PathBuf>,
-    pub size_bytes: u64,
+    /// Pieces played in order. A disc title can be several pieces (DVD VOB parts, Blu-ray clips).
+    pub sources: Vec<Segment>,
     /// Length in seconds, when it is known.
     pub duration_secs: Option<f64>,
     pub selected: bool,
+}
+
+impl Title {
+    /// Bytes the title takes up, which is about the size of its MKV.
+    pub fn size(&self) -> u64 {
+        self.sources.iter().map(|s| s.len).sum()
+    }
+}
+
+pub fn file_len(path: &Path) -> u64 {
+    std::fs::metadata(path).map(|m| m.len()).unwrap_or(0)
 }
 
 /// Fills in the title number and the disc name, e.g. `%s_%02u.mkv` gives `Movie_03.mkv`.
@@ -56,7 +84,7 @@ fn sanitize(text: &str) -> String {
     }
 }
 
-/// The name a folder or disc is known by: its last folder name, or "disc" for a drive root.
+/// The name a folder is known by: its last folder name, or "disc" for a drive root.
 pub fn folder_label(folder: &Path) -> String {
     folder
         .file_name()
@@ -101,19 +129,12 @@ pub fn output_path(
     folder.join(format!("{base}{clash}.mkv"))
 }
 
-/// What ffmpeg reads for a title: the file itself, or a `concat:` list of its parts.
-pub fn input_arg(sources: &[PathBuf]) -> OsString {
-    if let [one] = sources {
-        return one.as_os_str().to_os_string();
+/// The file itself when a title is one whole file, so ffmpeg can read it directly.
+pub fn direct_path(sources: &[Segment]) -> Option<&Path> {
+    match sources {
+        [one] if one.offset == 0 && one.len == file_len(&one.path) => Some(one.path.as_path()),
+        _ => None,
     }
-    let mut arg = OsString::from("concat:");
-    for (i, path) in sources.iter().enumerate() {
-        if i > 0 {
-            arg.push("|");
-        }
-        arg.push(path.as_os_str());
-    }
-    arg
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -171,11 +192,11 @@ pub fn parse_mpls(bytes: &[u8]) -> Option<Vec<PlayItem>> {
     Some(items)
 }
 
-fn be_u16(bytes: &[u8], at: usize) -> Option<u16> {
+pub fn be_u16(bytes: &[u8], at: usize) -> Option<u16> {
     Some(u16::from_be_bytes(bytes.get(at..at + 2)?.try_into().ok()?))
 }
 
-fn be_u32(bytes: &[u8], at: usize) -> Option<u32> {
+pub fn be_u32(bytes: &[u8], at: usize) -> Option<u32> {
     Some(u32::from_be_bytes(bytes.get(at..at + 4)?.try_into().ok()?))
 }
 
@@ -192,7 +213,15 @@ pub fn parse_vob_name(name: &str) -> Option<(u32, u32)> {
     Some((set.parse().ok()?, part.parse().ok()?))
 }
 
-/// ffprobe prints the length in seconds as plain text.
+/// DVD title set menu file `VTS_NN_0.IFO` gives its title set number.
+pub fn parse_ifo_name(name: &str) -> Option<u32> {
+    let upper = name.to_ascii_uppercase();
+    let rest = upper.strip_prefix("VTS_")?.strip_suffix(".IFO")?;
+    let (set, part) = rest.split_once('_')?;
+    (part == "0").then(|| set.parse().ok()).flatten()
+}
+
+/// What ffprobe prints for a length: seconds as plain text.
 pub fn parse_duration(text: &str) -> Option<f64> {
     text.trim()
         .parse::<f64>()
@@ -213,17 +242,17 @@ mod tests {
 
     fn mpls_bytes(clips: &[(&str, u32, u32)]) -> Vec<u8> {
         let mut b = b"MPLS0200".to_vec();
-        b.extend_from_slice(&20u32.to_be_bytes()); // PlayList starts at byte 20
+        b.extend_from_slice(&20u32.to_be_bytes());
         b.resize(20, 0);
-        b.extend_from_slice(&0u32.to_be_bytes()); // length
-        b.extend_from_slice(&0u16.to_be_bytes()); // reserved
+        b.extend_from_slice(&0u32.to_be_bytes());
+        b.extend_from_slice(&0u16.to_be_bytes());
         b.extend_from_slice(&(clips.len() as u16).to_be_bytes());
-        b.extend_from_slice(&0u16.to_be_bytes()); // sub paths
+        b.extend_from_slice(&0u16.to_be_bytes());
         for (clip, in_t, out_t) in clips {
             b.extend_from_slice(&20u16.to_be_bytes());
             b.extend_from_slice(clip.as_bytes());
             b.extend_from_slice(b"M2TS");
-            b.extend_from_slice(&[0, 0, 0]); // flags and STC id
+            b.extend_from_slice(&[0, 0, 0]);
             b.extend_from_slice(&in_t.to_be_bytes());
             b.extend_from_slice(&out_t.to_be_bytes());
         }
@@ -231,23 +260,24 @@ mod tests {
     }
 
     #[test]
-    fn template_takes_number_and_disc_name() {
-        assert_eq!(fill_name(DEFAULT_NAME_TEMPLATE, 3, "x"), "title03.mkv");
+    fn template_takes_disc_name_and_number() {
+        assert_eq!(fill_name(DEFAULT_NAME_TEMPLATE, 3, "Movie"), "Movie_03.mkv");
         assert_eq!(
             fill_name("%s_%02u.mkv", 4, "Movie: Disc"),
             "Movie_ Disc_04.mkv"
         );
+        assert_eq!(fill_name("title%02u.mkv", 3, "x"), "title03.mkv");
     }
 
     #[test]
     fn output_uses_clash_name_when_taken() {
         let dir = Path::new("out");
         assert_eq!(
-            output_path(dir, DEFAULT_NAME_TEMPLATE, 3, "d", |_| false),
+            output_path(dir, "title%02u.mkv", 3, "d", |_| false),
             dir.join("title03.mkv")
         );
         assert_eq!(
-            output_path(dir, DEFAULT_NAME_TEMPLATE, 3, "d", |_| true),
+            output_path(dir, "title%02u.mkv", 3, "d", |_| true),
             dir.join("title03_t03.mkv")
         );
     }
@@ -270,7 +300,7 @@ mod tests {
     #[test]
     fn disc_kind_reads_the_root_folders() {
         assert_eq!(disc_kind(Path::new("Z:\\no-such-drive\\")), DiscKind::Empty);
-        let dir = std::env::temp_dir().join(format!("dr_disc_kind_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("mkv_disc_kind_{}", std::process::id()));
         std::fs::create_dir_all(dir.join("BDMV")).unwrap();
         assert_eq!(disc_kind(&dir), DiscKind::BluRay);
         std::fs::remove_dir_all(dir.join("BDMV")).unwrap();
@@ -305,21 +335,37 @@ mod tests {
     }
 
     #[test]
-    fn vob_names_give_set_and_part() {
+    fn vob_and_ifo_names_are_read() {
         assert_eq!(parse_vob_name("VTS_01_2.VOB"), Some((1, 2)));
         assert_eq!(parse_vob_name("vts_12_0.vob"), Some((12, 0)));
         assert_eq!(parse_vob_name("VIDEO_TS.VOB"), None);
+        assert_eq!(parse_ifo_name("VTS_03_0.IFO"), Some(3));
+        assert_eq!(parse_ifo_name("VTS_03_1.IFO"), None);
     }
 
     #[test]
-    fn input_is_file_or_concat_list() {
+    fn whole_file_is_read_directly_and_pieces_are_not() {
+        let dir = std::env::temp_dir().join(format!("mkv_direct_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("a.ts");
+        std::fs::write(&file, vec![0u8; 100]).unwrap();
+        let whole = Segment::whole(file.clone());
         assert_eq!(
-            input_arg(&[PathBuf::from("a.vob")]),
-            OsString::from("a.vob")
+            direct_path(std::slice::from_ref(&whole)),
+            Some(file.as_path())
         );
-        assert_eq!(
-            input_arg(&[PathBuf::from("a.vob"), PathBuf::from("b.vob")]),
-            OsString::from("concat:a.vob|b.vob")
-        );
+        let part = Segment {
+            path: file.clone(),
+            offset: 0,
+            len: 50,
+        };
+        assert_eq!(direct_path(std::slice::from_ref(&part)), None);
+        let second = Segment {
+            path: file.clone(),
+            offset: 50,
+            len: 50,
+        };
+        assert_eq!(direct_path(&[whole, second]), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
