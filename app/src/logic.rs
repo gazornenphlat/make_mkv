@@ -112,7 +112,8 @@ fn strip_mkv(name: &str) -> &str {
     }
 }
 
-/// Output file for one title. Uses the clash name when the first choice already exists.
+/// Output file for one title. Uses the clash name when the first choice already exists,
+/// and keeps trying further clash names until one is free.
 pub fn output_path(
     folder: &Path,
     template: &str,
@@ -125,8 +126,15 @@ pub fn output_path(
     if !exists(&first) {
         return first;
     }
-    let clash = strip_mkv(&fill_name(CLASH_SUFFIX_TEMPLATE, number, disc)).to_string();
-    folder.join(format!("{base}{clash}.mkv"))
+    let mut n = number;
+    loop {
+        let clash = strip_mkv(&fill_name(CLASH_SUFFIX_TEMPLATE, n, disc)).to_string();
+        let candidate = folder.join(format!("{base}{clash}.mkv"));
+        if !exists(&candidate) {
+            return candidate;
+        }
+        n += 1;
+    }
 }
 
 /// The file itself when a title is one whole file, so ffmpeg can read it directly.
@@ -279,6 +287,16 @@ mod tests {
         assert_eq!(
             output_path(dir, "title%02u.mkv", 3, "d", |_| true),
             dir.join("title03_t03.mkv")
+        );
+    }
+
+    #[test]
+    fn output_keeps_trying_clash_names_until_one_is_free() {
+        let dir = Path::new("out");
+        let taken = |p: &Path| p == dir.join("title03.mkv") || p == dir.join("title03_t03.mkv");
+        assert_eq!(
+            output_path(dir, "title%02u.mkv", 3, "d", taken),
+            dir.join("title03_t04.mkv")
         );
     }
 
