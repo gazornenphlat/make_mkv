@@ -84,6 +84,7 @@ enum Msg {
 struct Scan {
     titles: Vec<Title>,
     disc_name: Option<String>,
+    notes: Vec<String>,
 }
 
 struct Job {
@@ -185,8 +186,8 @@ fn scan(
     cancel: Arc<AtomicBool>,
 ) {
     // A DVD or Blu-ray layout gives real titles; any other folder is searched for video files.
-    let (disc_name, found) = match disc::find_disc_titles(&folder) {
-        Some(found) => (found.disc_name, found.titles),
+    let (disc_name, found, notes) = match disc::find_disc_titles(&folder) {
+        Some(found) => (found.disc_name, found.titles, found.notes),
         None => {
             let mut paths = Vec::new();
             collect(&folder, 0, &mut paths);
@@ -202,7 +203,7 @@ fn scan(
                     duration_secs: None,
                 })
                 .collect();
-            (None, titles)
+            (None, titles, Vec::new())
         }
     };
 
@@ -230,7 +231,11 @@ fn scan(
     } else if titles.is_empty() {
         Err("No titles were found in that folder.".to_string())
     } else {
-        Ok(Scan { titles, disc_name })
+        Ok(Scan {
+            titles,
+            disc_name,
+            notes,
+        })
     };
     let _ = tx.send(Msg::Scanned(result));
 }
@@ -524,9 +529,16 @@ impl App {
             self.add_log("That source folder does not exist.");
             return;
         }
-        // A disc with an AACS folder is protected. This app does not decrypt it.
+        // A disc with an AACS folder is protected. This app does not decrypt it,
+        // so there is nothing to scan: stop here instead of ripping encrypted data.
         if folder.join("AACS").is_dir() {
             self.add_log("This disc uses AACS copy protection, which this app cannot read.");
+            return;
+        }
+        // BD+ protection lives in BDMV/BDSVM. Same treatment as AACS.
+        if folder.join("BDMV").join("BDSVM").is_dir() {
+            self.add_log("This disc uses BD+ copy protection, which this app cannot read.");
+            return;
         }
         let (tx, rx) = mpsc::channel();
         self.rx = Some(rx);
@@ -623,6 +635,9 @@ impl App {
         for msg in msgs {
             match msg {
                 Msg::Scanned(Ok(scan)) => {
+                    for note in scan.notes {
+                        self.add_log(note);
+                    }
                     self.add_log(format!("Found {} title(s).", scan.titles.len()));
                     self.titles = scan.titles;
                     self.disc_name = scan.disc_name;
