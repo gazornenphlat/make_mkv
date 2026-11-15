@@ -19,17 +19,16 @@ pub fn parse_vts_programs(ifo: &[u8]) -> Option<Vec<Program>> {
     if !ifo.starts_with(b"DVDVIDEO-VTS") {
         return None;
     }
-    // VTS_PGCI: sector of the program chain table, at byte 0xCC of the file.
+    // VTS_PGCIT: sector of the program chain table, at byte 0xCC of the file.
+    // It is a flat table: a 2-byte PGC count, a 4-byte last-byte address, then one
+    // 8-byte search entry per PGC (category + the PGC's offset from the table start).
     let pgci = be_u32(ifo, 0xCC)? as usize * SECTOR;
-    // The first language unit's table is at +12, as an offset from the start of VTS_PGCI.
-    let lu_start = be_u32(ifo, pgci + 8 + 4)? as usize;
-    let pgcit = pgci + lu_start;
-    let count = be_u16(ifo, pgcit)? as usize;
+    let count = be_u16(ifo, pgci)? as usize;
     let mut programs = Vec::with_capacity(count);
     for i in 0..count {
         // Each entry is 8 bytes: category (4) and the chain's offset from the table start (4).
-        let start = be_u32(ifo, pgcit + 8 + i * 8 + 4)? as usize;
-        let pgc = pgcit + start;
+        let start = be_u32(ifo, pgci + 8 + i * 8 + 4)? as usize;
+        let pgc = pgci + start;
         let cell_count = *ifo.get(pgc + 3)? as usize;
         let cell_table = pgc + be_u16(ifo, pgc + 0xE8)? as usize;
         let mut cells = Vec::with_capacity(cell_count);
@@ -65,16 +64,15 @@ fn bcd_time(bytes: &[u8]) -> Option<f64> {
 /// Builds a minimal title set menu with one program, for tests.
 #[cfg(test)]
 pub fn synthetic_ifo(time: [u8; 4], cells: &[(u32, u32)]) -> Vec<u8> {
-    let mut b = vec![0u8; 2080 + 256 + 24 * cells.len()];
+    let pgci = 2048;
+    let mut b = vec![0u8; pgci + 16 + 256 + 24 * cells.len()];
     b[..12].copy_from_slice(b"DVDVIDEO-VTS");
     b[0xCC..0xD0].copy_from_slice(&1u32.to_be_bytes());
-    let pgci = 2048;
+    // A real VTS_PGCIT: count (2), last-byte address (4), then one 8-byte search
+    // entry per PGC: category (4) + the PGC's offset from the table start (4).
     b[pgci..pgci + 2].copy_from_slice(&1u16.to_be_bytes());
     b[pgci + 12..pgci + 16].copy_from_slice(&16u32.to_be_bytes());
-    let pgcit = pgci + 16;
-    b[pgcit..pgcit + 2].copy_from_slice(&1u16.to_be_bytes());
-    b[pgcit + 12..pgcit + 16].copy_from_slice(&16u32.to_be_bytes());
-    let pgc = pgcit + 16;
+    let pgc = pgci + 16;
     b[pgc + 3] = cells.len() as u8;
     b[pgc + 4..pgc + 8].copy_from_slice(&time);
     b[pgc + 0xE8..pgc + 0xEA].copy_from_slice(&256u16.to_be_bytes());

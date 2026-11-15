@@ -17,6 +17,13 @@ It is a personal tool. It does not decrypt AACS or BD+ protected discs. For a pr
 
 The window opens at once. ffmpeg and the drive list are checked in the background.
 
+## Media Renamer
+
+The repo also holds a second app, [Media Renamer](media-renamer/README.md). It renames TV episode and movie files into a consistent naming scheme, offline: it shows the new names before anything changes, and the last batch can be undone.
+
+    cd media-renamer
+    cargo run --release
+
 ## Using it
 
 1. Put a disc in a drive and press **Use this** next to it, or press **Browse** and pick a folder.

@@ -14,10 +14,12 @@ pub struct FoundTitle {
     pub duration_secs: Option<f64>,
 }
 
-/// What a disc layout gave: the disc's name, and its titles.
+/// What a disc layout gave: the disc's name, its titles, and notes worth showing
+/// (for example, a menu file that gave no programs).
 pub struct Found {
     pub disc_name: Option<String>,
     pub titles: Vec<FoundTitle>,
+    pub notes: Vec<String>,
 }
 
 /// Titles for a DVD or Blu-ray layout. None when the folder has neither, or has no usable titles.
@@ -28,14 +30,16 @@ pub fn find_disc_titles(folder: &Path) -> Option<Found> {
         return Some(Found {
             disc_name: disc_name(folder),
             titles,
+            notes: Vec::new(),
         });
     }
     let video_ts = dvd_root(folder)?;
     let name = disc_name(folder);
-    let titles = dvd_titles(&video_ts, name.as_deref());
+    let (titles, notes) = dvd_titles(&video_ts, name.as_deref());
     (!titles.is_empty()).then_some(Found {
         disc_name: name,
         titles,
+        notes,
     })
 }
 
@@ -153,7 +157,7 @@ fn dvd_root(folder: &Path) -> Option<PathBuf> {
 
 /// DVD titles, per title set. Each title set's VOB parts are read through its IFO menu, so each
 /// program (title) becomes its own title. Without a usable IFO, the whole title set is one title.
-fn dvd_titles(video_ts: &Path, disc: Option<&str>) -> Vec<FoundTitle> {
+fn dvd_titles(video_ts: &Path, disc: Option<&str>) -> (Vec<FoundTitle>, Vec<String>) {
     let Ok(entries) = std::fs::read_dir(video_ts) else {
         return Vec::new();
     };
@@ -172,6 +176,7 @@ fn dvd_titles(video_ts: &Path, disc: Option<&str>) -> Vec<FoundTitle> {
     }
 
     let mut titles = Vec::new();
+    let mut notes = Vec::new();
     for (set, mut list) in parts {
         list.sort();
         let files: Vec<(PathBuf, u64)> = list
@@ -201,21 +206,30 @@ fn dvd_titles(video_ts: &Path, disc: Option<&str>) -> Vec<FoundTitle> {
                     });
                 }
             }
-            _ => titles.push(FoundTitle {
-                name: with_disc(disc, format!("Title set {set:02}")),
-                sources: files
-                    .iter()
-                    .map(|(path, len)| Segment {
-                        path: path.clone(),
-                        offset: 0,
-                        len: *len,
-                    })
-                    .collect(),
-                duration_secs: None,
-            }),
+            _ => {
+                // A menu file was there but gave no programs: say so, instead of
+                // silently treating the whole set as one title.
+                if menus.contains_key(&set) {
+                    notes.push(format!(
+                        "Title set {set:02}: its menu file gave no programs, so the whole set is one title."
+                    ));
+                }
+                titles.push(FoundTitle {
+                    name: with_disc(disc, format!("Title set {set:02}")),
+                    sources: files
+                        .iter()
+                        .map(|(path, len)| Segment {
+                            path: path.clone(),
+                            offset: 0,
+                            len: *len,
+                        })
+                        .collect(),
+                    duration_secs: None,
+                })
+            }
         }
     }
-    titles
+    (titles, notes)
 }
 
 /// Byte pieces of the VOB parts that hold the given sector ranges. The parts are one address space.
